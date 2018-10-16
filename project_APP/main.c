@@ -16,11 +16,11 @@
 //#include "systick.h"
 #include "usart.h"
 #include "fmc.h"
+#include "conf.h"
 
 /* Private variables ---------------------------------------------------------*/
-ADC_InitPara  ADC_InitStructure;
-uint8_t b_onoffflag=0,flag_notACCON=0; 
-int presspowerkeytime=0,b_isenscontflag=0,vbatuse=0,isensuse=0,report_volt=0;
+uint8_t b_onoffflag=0,flag_notACCON=0,flag_stop = 0;
+int presspowerkeytime=0,vbat_stdbyflag=0,b_isenscontflag=0,vbatuse=0,isensuse=0,report_volt=0;
 bool maskshake=false;
 uint16_t vbattmp=0,isenstmp =0;
 uint32_t tmp;
@@ -29,31 +29,13 @@ uint32_t tmp;
 #define FMC_PAGE_SIZE           ((uint16_t)0x400)
 
 
-#define GPIO_WKUP	GPIO_PIN_0
-#define PORT_WKUP	GPIOA
+#define VBAT_STDBY 		0x4F5   // 9V 断电保护 //0x50A		//10v    
+#define VBAT_ALERT 		0x585  //0x585	  //11v  
+#define ICURRENT_STB 	0x50
 
-#define GPIO_ACCDET GPIO_PIN_3
-#define PORT_ACCDET GPIOA
+#define VBAT_STDBYTIMEOUT	 10
+#define	ISENSCONTFLAGINIT  10
 
-#define GPIO_PWKEY GPIO_PIN_7
-#define PORT_PWKEY GPIOA
-
-#define GPIO_OPVEN GPIO_PIN_5
-#define PORT_OPVEN GPIOA
-
-#define GPIO_PW5VEN GPIO_PIN_8
-#define PORT_PW5VEN GPIOA
-
-#define GPIO_PW4VEN GPIO_PIN_6
-#define PORT_PW4VEN GPIOA
-
-#define GPIO_ISENSADC GPIO_PIN_2
-#define PORT_ISENSADC GPIOA
-#define CHANN_ISENSADC ADC_CHANNEL_2
-
-#define GPIO_VBATADC GPIO_PIN_1
-#define PORT_VBATADC GPIOA
-#define CHANN_VBATADC ADC_CHANNEL_1
 
 
 uint32_t before_start_time = 30;// 重启后等待时间
@@ -63,7 +45,6 @@ uint32_t current_between_time = 0 ; // 当前喂狗等待时间
 uint32_t current_start_time = 0 ; // 重启后等待时间
 
 uint32_t boot_version = 0x04030201 ;
-#define ADDRESS_APP_VERSION 0x08009C0C  // App 程序的版本
 
 uint32_t * mptrd;
 
@@ -77,278 +58,6 @@ void clearData(void) {
 }
 
 
-void delay1us(int us)
-{
-    int i,j;
-    for(i=0; i<us; i++)
-        for(j=0; j<1; j++)
-        {}
-}
-
-void delay_us(uint16_t delay)
-{
-    TIMER_Enable(TIMER2, ENABLE);
-    TIMER_SetCounter(TIMER2, delay);
-    while(delay > 1)
-    {
-        delay = TIMER_GetCounter(TIMER2);
-    }
-    TIMER_Enable(TIMER2, DISABLE);
-}
-
-
-void delay_ms(uint16_t delay)
-{
-    while(delay--) {
-        delay_us(1000);
-    }
-}
-
-
-
-
-void RCC_Configuration(void)
-{
-
-    /* ADCCLK = PCLK2/6 */
-    RCC_ADCCLKConfig(RCC_ADCCLK_APB2_DIV6);
-    /* Enable GPIOC clock */
-    RCC_AHBPeriphClock_Enable(RCC_AHBPERIPH_GPIOA | RCC_AHBPERIPH_GPIOB, ENABLE);
-    /* Enable ADC1 and GPIO_LED clock */
-    RCC_APB2PeriphClock_Enable(RCC_APB2PERIPH_ADC1, ENABLE);
-    /* Enable SYSCFG clock */
-    RCC_APB2PeriphClock_Enable(RCC_APB2PERIPH_CFG | RCC_APB2PERIPH_USART1, ENABLE);
-
-    RCC_APB1PeriphClock_Enable(RCC_APB1PERIPH_PWR, ENABLE);
-    RCC_USARTCLKConfig(RCC_USART1CLK_HSI);
-
-
-    RCC_AHBPeriphClock_Enable(RCC_AHBPERIPH_GPIOA | RCC_AHBPERIPH_GPIOB,ENABLE );
-    RCC_APB1PeriphClock_Enable(RCC_APB1PERIPH_USART2,ENABLE);
-    RCC_APB2PeriphClock_Enable(RCC_APB2PERIPH_USART1,ENABLE);
-    RCC_APB2PeriphClock_Enable(RCC_APB2PERIPH_SPI1,ENABLE);
-
-}
-
-void GPIO_BootConfiguration(void)
-{
-    GPIO_InitPara GPIO_InitStructure;
-
-    /* Configure PC1 (ADC Channel11) as analog input -------------------------*/
-    GPIO_InitStructure.GPIO_Pin = GPIO_VBATADC | GPIO_ISENSADC;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_AN;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_WKUP ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_IN;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_NOPULL;
-    GPIO_Init(PORT_WKUP, &GPIO_InitStructure);
-
-	/*
-	  GPIO_InitStructure.GPIO_Pin = GPIO_WKUP ;
-    GPIO_InitStructure.GPIO_Speed = GPIO_SPEED_2MHZ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OTYPE_PP;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_PULLDOWN;
-    GPIO_Init(PORT_WKUP, &GPIO_InitStructure);
-	
-	*/
-	
-    GPIO_InitStructure.GPIO_Pin = GPIO_ACCDET ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_IN;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_PULLUP;
-    GPIO_Init(PORT_ACCDET, &GPIO_InitStructure);
-
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_PWKEY ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_IN;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_PULLUP;
-    GPIO_Init(PORT_PWKEY, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_PW5VEN ;
-    GPIO_InitStructure.GPIO_Speed = GPIO_SPEED_2MHZ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OTYPE_PP;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_PULLDOWN;
-    GPIO_Init(PORT_PW5VEN, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_PW4VEN ;
-    GPIO_InitStructure.GPIO_Speed = GPIO_SPEED_2MHZ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OTYPE_PP;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_PULLDOWN;
-    GPIO_Init(PORT_PW4VEN, &GPIO_InitStructure);
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_OPVEN ;
-    GPIO_InitStructure.GPIO_Speed = GPIO_SPEED_2MHZ;
-    GPIO_InitStructure.GPIO_Mode = GPIO_MODE_OUT;
-    GPIO_InitStructure.GPIO_OType = GPIO_OTYPE_PP;
-    GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_PULLDOWN;
-    GPIO_Init(PORT_OPVEN, &GPIO_InitStructure);
-
-    //USART1
-    GPIO_InitStructure.GPIO_Pin     = GPIO_PIN_6 | GPIO_PIN_7;
-    GPIO_InitStructure.GPIO_Mode    = GPIO_MODE_IN;
-    GPIO_InitStructure.GPIO_PuPd    = GPIO_PUPD_PULLDOWN;
-    GPIO_Init(GPIOB,&GPIO_InitStructure);
-
-    //GPIO_PinAFConfig(GPIOA,GPIO_PINSOURCE13,GPIO_AF_0);
-    //GPIO_PinAFConfig(GPIOA,GPIO_PINSOURCE14,GPIO_AF_0);
-    /*
-        GPIO_InitStructure.GPIO_Pin = GPIO_PIN_2 | GPIO_PIN_3 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7;
-        GPIO_InitStructure.GPIO_Mode = GPIO_MODE_IN;
-        GPIO_InitStructure.GPIO_PuPd = GPIO_PUPD_NOPULL;
-        GPIO_Init(GPIOA, &GPIO_InitStructure);
-    */
-}
-
-
-
-void NVIC_Configuration(void)
-{
-    NVIC_InitPara NVIC_InitStructure;
-    EXTI_InitPara EXTI_InitStructure;
-
-    /* Configure and enable ADC interrupt */
-    NVIC_InitStructure.NVIC_IRQ = ADC1_CMP_IRQn;
-    NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-    NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    NVIC_PRIGroup_Enable(NVIC_PRIGROUP_1);
-    NVIC_InitStructure.NVIC_IRQ = EXTI2_3_IRQn;
-    NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-    NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    /* Connect EXTI3 Line to PA3 pin */
-    SYSCFG_EXTILine_Config(EXTI_SOURCE_GPIOA, EXTI_SOURCE_PIN3);
-    EXTI_InitStructure.EXTI_LINE = EXTI_LINE3;
-    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Falling;
-    EXTI_InitStructure.EXTI_LINEEnable = ENABLE;
-    EXTI_Init(&EXTI_InitStructure);
-
-    /* Connect EXTI7 Line to PA7 pin */
-    SYSCFG_EXTILine_Config(EXTI_SOURCE_GPIOA, EXTI_SOURCE_PIN7);
-    EXTI_InitStructure.EXTI_LINE = EXTI_LINE7;
-    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Falling;
-    EXTI_InitStructure.EXTI_LINEEnable = ENABLE;
-    EXTI_Init(&EXTI_InitStructure);
-
-    NVIC_PRIGroup_Enable(NVIC_PRIGROUP_1);
-    NVIC_InitStructure.NVIC_IRQ = EXTI4_15_IRQn;
-    NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-    NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    /*Configure EXTI Line17(RTC Alarm) to generate an interrupt on rising edge*/
-    EXTI_ClearIntBitState(EXTI_LINE17);
-    EXTI_InitStructure.EXTI_LINE = EXTI_LINE17;
-    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising;
-    EXTI_InitStructure.EXTI_LINEEnable = ENABLE;
-    EXTI_Init(&EXTI_InitStructure);
-
-    /* NVIC configuration */
-    NVIC_InitStructure.NVIC_IRQ = RTC_IRQn;
-    NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-    NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-
-    /* USART1 */
-    /*EXTI_ClearIntBitState(EXTI_LINE25);
-    EXTI_InitStructure.EXTI_LINE = EXTI_LINE25;
-    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
-    EXTI_InitStructure.EXTI_LINEEnable = ENABLE;
-    EXTI_Init(&EXTI_InitStructure);*/
-    /* Enable the USART1 Interrupt */
-    NVIC_InitStructure.NVIC_IRQ = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-    NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-    NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-    NVIC_Init(&NVIC_InitStructure);
-}
-void ADC_Configuration(void)
-{
-    /* Config ADC1  ----------------------------------------------------------*/
-    ADC_InitStructure.ADC_Mode_Scan = DISABLE;
-    ADC_InitStructure.ADC_Mode_Continuous = DISABLE;
-    ADC_InitStructure.ADC_Trig_External = ADC_EXTERNAL_TRIGGER_MODE_NONE;
-    ADC_InitStructure.ADC_Data_Align = ADC_DATAALIGN_RIGHT;
-    ADC_InitStructure.ADC_Channel_Number = 1;
-    ADC_Init(&ADC_InitStructure);
-
-    /* Enable ADC1 */
-    ADC_Enable(ENABLE);
-
-    /* ADC1 calibration */
-    ADC_Calibration();
-    delay_ms(5);
-}
-
-int RTC_ALARM_PreConfig(bool RST)
-{
-    int i,j;
-    /* Allow access to RTC */
-    PWR_BackupAccess_Enable(ENABLE);
-
-    if(RST)
-    {
-        RCC_BackupReset_Enable(ENABLE);
-        RCC_BackupReset_Enable(DISABLE);
-    }
-
-    /* Enable the LSE OSC */
-    RCC_LSEConfig(ENABLE);
-    /* Wait till LSE is ready */
-    for(j=0; j<200; j++)
-    {
-        for(i=0; i<20000; i++)
-        {
-            if(!(RCC_GetBitState(RCC_FLAG_LSESTB) == RESET))
-                break;
-        }
-        if(i<20000)
-            break;
-    }
-    if(j>=200)
-    {
-        return 0x01;
-    }
-    /* Select the RTC Clock Source */
-    RCC_RTCCLKConfig(RCC_RTCCLKSource_LSE);
-
-    /* Enable the RTC Clock */
-    RCC_RTCCLK_Enable(ENABLE);
-
-    /* Wait for RTC APB registers synchronisation */
-    //RTC_WaitRSF_ToSetAgain();
-
-    return 0;
-}
-
-
-void Delayus_Configuration(void)
-{
-    TIMER_BaseInitPara  TIMER_TimeBaseStructure;
-
-    RCC_APB1PeriphClock_Enable(RCC_APB1PERIPH_TIMER2,ENABLE);
-
-    TIMER_TimeBaseStructure.TIMER_Period = 1;
-    TIMER_TimeBaseStructure.TIMER_Prescaler = ((SystemCoreClock / 1000000) - 1);
-    TIMER_TimeBaseStructure.TIMER_ClockDivision = TIMER_CDIV_DIV1;
-    TIMER_TimeBaseStructure.TIMER_CounterMode = TIMER_COUNTER_DOWN;
-    TIMER_BaseInit(TIMER2, &TIMER_TimeBaseStructure);
-}
-
-
 
 /**
   * @brief  Main program.
@@ -357,7 +66,7 @@ void Delayus_Configuration(void)
   */
 int main(void)
 {
-    app_version = 0x01000104 ;
+    app_version = 0x01000108 ;
 
     /*Config System clocks --------------------------------------------------*/
     RCC_Configuration();
@@ -369,11 +78,6 @@ int main(void)
     NVIC_Configuration();
     //NVIC_VectTableSet(NVIC_VECTTAB_FLASH,0x08006400);
     NVIC_VectTableSet(NVIC_VECTTAB_FLASH,0x6400);
-
-
-
-    GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
-    GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
 
     /* Enable write access to IWDG_PSR and IWDG_RLDR registers */
     IWDG_Write_Enable(IWDG_WRITEACCESS_ENABLE);
@@ -392,6 +96,11 @@ int main(void)
 
     ADC_Configuration();
 
+
+    GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
+    GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
+
+
     USART_Configure();
 
     USART_INT_Set(USART1,USART_INT_RBNE,ENABLE);
@@ -404,7 +113,7 @@ int main(void)
     clearData();
     data[0] = 0 ;
     usart_send_ack(RESP_START_APP,data,1);
-    /*
+    
     mptrd = (uint32_t *)(ADDRESS_APP_VERSION) ;
     tmp = *mptrd ;
 
@@ -415,8 +124,8 @@ int main(void)
     	writeParamToData();
 
     }
-    */
-
+    
+		b_onoffflag = 1 ;
 
     while (1)
     {
@@ -442,11 +151,93 @@ int main(void)
         // 从GPIO 中读取 ACC的 状态
         flag_notACCON = GPIO_ReadInputBit(PORT_ACCDET,GPIO_ACCDET);
 
+				// 如果 电压 低于 9V 
+        if(vbatuse < VBAT_STDBY)
+        {
+					// 如果 电压 低于 9V  超过 一定时间
+            if(vbat_stdbyflag > VBAT_STDBYTIMEOUT)
+            {
+                GPIO_ResetBits(PORT_PW5VEN,GPIO_PW5VEN);
+                GPIO_ResetBits(PORT_PW4VEN,GPIO_PW4VEN);
+                b_onoffflag=0;
+                vbat_stdbyflag=0;
+								
+            } 
+						else
+            {
+                vbat_stdbyflag++;
+            }
+            b_isenscontflag=0;       		//add 20161229
+        }
+        else if(vbatuse < VBAT_ALERT)
+        {
+            if(!(GPIO_ReadInputBit(PORT_ACCDET,GPIO_ACCDET)))  	//ACC is high normal,connect 12v is low
+            {
+                if(b_onoffflag > 0)
+                {
+                    GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
+                    GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
+                    flag_stop = 0 ;
+                }
+                b_isenscontflag=0;      	//add 20161229
+            }
+            else if(isensuse > ICURRENT_STB)
+            {
+                if(b_isenscontflag < ISENSCONTFLAGINIT)
+                {
+                    b_isenscontflag++;
+                }
+                else
+                {
+                    GPIO_ResetBits(PORT_PW5VEN,GPIO_PW5VEN);
+                    GPIO_ResetBits(PORT_PW4VEN,GPIO_PW4VEN);
+                    b_onoffflag=0;
+                    b_isenscontflag=0;
+                }
+            } 
+						else
+            {
+                b_isenscontflag=0;
+            }
+            vbat_stdbyflag=0;
+        }
+        else
+        {
+            if(b_onoffflag>0)
+            {
+                GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
+                GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
+                flag_stop = 0 ;
+            }
+            b_isenscontflag=0;
+            vbat_stdbyflag=0;
+        }
+        if(!(GPIO_ReadInputBit(PORT_PWKEY,GPIO_PWKEY)))  			//powerkey high is normal,connect GND is low
+        {
+            presspowerkeytime++;
+        } 
+				else
+        {
+            presspowerkeytime=0;
+        }
+
+/*
+        if(presspowerkeytime>20)    							//10S
+        {
+            GPIO_ResetBits(PORT_PW5VEN,GPIO_PW5VEN);
+            GPIO_ResetBits(PORT_PW4VEN,GPIO_PW4VEN);
+            b_onoffflag=0;
+            presspowerkeytime=0;
+            maskshake=true;
+            flag_stop = 1 ;
+        }
+*/
+
         IWDG_ReloadCounter();
         delay_ms(1000);
 
-        if(!flag_notACCON) {
-						// ACC  ON 
+        if(!flag_notACCON && b_onoffflag != 0) {
+            // ACC  ON
 
             if( current_start_time < before_start_time) {
                 current_start_time++ ;
@@ -466,19 +257,21 @@ int main(void)
                 GPIO_ResetBits(PORT_PW5VEN,GPIO_PW5VEN);
                 GPIO_ResetBits(PORT_PW4VEN,GPIO_PW4VEN);
                 delay_ms(5000);
-							  usart_send_ack(RESP_BEFORE_PW_SET,data,0);
+                //usart_send_ack(RESP_BEFORE_PW_SET,data,0);
                 GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
                 GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
 
-                delay_ms(2000);
-								usart_send_ack(RESP_BEFORE_PWKEY_RESET,data,0);
+                //delay_ms(2000);
+                //usart_send_ack(RESP_BEFORE_PWKEY_RESET,data,0);
                 GPIO_ResetBits(PORT_PWKEY,GPIO_PWKEY);
-
+								
+							//GPIO_SetBits(PORT_WKUP,GPIO_WKUP);
                 //GPIO_ResetBits(PORT_ACCDET,GPIO_ACCDET);
                 delay_ms(3000);
-							  usart_send_ack(RESP_BEFORE_PWKEY_SET,data,0);
+                //usart_send_ack(RESP_BEFORE_PWKEY_SET,data,0);
                 GPIO_SetBits(PORT_PWKEY,GPIO_PWKEY);
                 //GPIO_SetBits(PORT_ACCDET,GPIO_ACCDET);
+								//GPIO_ResetBits(PORT_WKUP,GPIO_WKUP);
 
                 current_start_time = 0 ;
                 current_between_time = 0 ;
@@ -486,8 +279,8 @@ int main(void)
             }
 
         }
-				else {
-					
+        else if(flag_notACCON) {
+
             clearData();
 
             data[0] = current_between_time >> 24 ;
@@ -502,11 +295,12 @@ int main(void)
             data[7] = current_start_time ;
 
 
-
-            usart_send_ack(RESP_BEFORE_PW_RESET,data,8);
-				}
+            //usart_send_ack(RESP_BEFORE_PW_RESET,data,8);
+            delay_ms(200);
+        }
 
         //USART1_Sendstr("--go --on---\r");
+
 
 
         if(u_rx_flag == 0x01) {
@@ -550,6 +344,8 @@ int main(void)
                 else {
                     before_start_time = tmp ;
                 }
+								current_start_time = before_start_time ;
+								
                 tmp = (u_rx.data[7] << 24) + (u_rx.data[6] << 16) + (u_rx.data[5] << 8) + u_rx.data[4] ;
 
                 if (tmp == 0) {
@@ -564,24 +360,35 @@ int main(void)
                 current_between_time = 0 ;
                 // boot 程序版本
 
-
-
-
                 data[0] = between_time >> 24 ;
                 data[1] = between_time >> 16 ;
                 data[2] = between_time >> 8 ;
                 data[3] = between_time;
 
                 // app 程序版本
-                data[4] = before_start_time >> 24 ;
-                data[5] = before_start_time >> 16 ;
-                data[6] = before_start_time >> 8 ;
-                data[7] = before_start_time ;
+                data[4] = current_start_time >> 24 ;
+                data[5] = current_start_time >> 16 ;
+                data[6] = current_start_time >> 8 ;
+                data[7] = current_start_time ;
 
 
                 delay_ms(500);
                 usart_send_ack(RESP_FETCH_DOG,data,8);
-            } else if(u_rx.cmd == CMD_GOTO_BOOT ) {
+            } 
+						else if(u_rx.cmd == CMD_CHECK_STATUS) {
+                // 检查 App 的 状态
+                // 清空 发送数据的 缓存区
+                clearData();
+
+                data[0] = 0 ;
+
+                usart_send_ack(RESP_CHECK_STATUS,data,1);
+
+
+            }
+						
+						
+						else if(u_rx.cmd == CMD_GOTO_BOOT ) {
                 //clearData();
 
                 //data[0] = 0 ;
@@ -615,8 +422,14 @@ int main(void)
             data[7] = current_start_time ;
 
 
+            data[8] = presspowerkeytime ;
 
-            usart_send_ack(STATUS_APP,data,8);
+            data[9] = vbatuse >> 8 ;
+
+            data[10] = vbatuse ;
+
+
+            //usart_send_ack(STATUS_APP,data,11);
         }
 
 

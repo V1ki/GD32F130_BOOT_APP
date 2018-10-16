@@ -6,7 +6,7 @@ volatile FMC_State FMCStatus = FMC_READY ;
 __IO uint32_t NbrOfPage = 0x00;
 uint32_t EraseCounter = 0x00,address = 0x0;
 uint32_t *ptrd;
-uint32_t write_now_app_len, write_app_len, write_app_checksum,app_version ;
+uint32_t write_now_app_len, write_app_len, write_app_checksum,app_version,app_flag;
 
 void clearAppArea() {
     /* Unlock the Flash Bank1 Program Erase controller */
@@ -28,6 +28,41 @@ void clearAppArea() {
 }
 
 
+void setAppFlag() {
+
+    readParamFromData();
+
+    if(write_app_len == 0xFFFFFFFF && write_now_app_len == 0xFFFFFFFF && write_app_checksum == 0xFFFFFFFF &&  app_version == 0xFFFFFFFF) {
+
+        ptrd = (uint32_t*)(ADDRESS_APP_FLAG);
+        app_flag = *ptrd ;
+        if (app_flag == 0xFFFFFFFF) {
+
+            /* Unlock the Flash Bank1 Program Erase controller */
+            FMC_Unlock();
+
+            /* Clear All pending flags */
+            FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
+
+            FMC_ErasePage(ADDRESS_APP_FLAG);
+            FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
+
+            // 设置首次刷入的flag
+            FMCStatus = FMC_ProgramWord(ADDRESS_APP_FLAG,APP_FLAG_FIRST);
+
+            FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
+
+            FMC_Lock();
+        }
+    }
+    // 如果都是为空的话
+
+
+
+
+}
+
+
 void readParamFromData() {
     // 实际写入长度
     ptrd = (uint32_t*)(ADDRESS_WRITE_NOW_APP_LEN);
@@ -41,6 +76,9 @@ void readParamFromData() {
 //
     ptrd = (uint32_t *)(ADDRESS_APP_VERSION) ;
     app_version = *ptrd ;
+
+    ptrd = (uint32_t*)(ADDRESS_APP_FLAG);
+    app_flag = *ptrd ;
 
 }
 
@@ -71,6 +109,31 @@ void writeParamToData() {
 
     FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
 
+
+    ptrd = (uint32_t*)(ADDRESS_APP_FLAG);
+    app_flag = *ptrd ;
+    if (app_flag == APP_FLAG_FIRST) {
+        // 第一次刷入的话.就可以设置了
+
+        /* Unlock the Flash Bank1 Program Erase controller */
+        FMC_Unlock();
+
+        /* Clear All pending flags */
+        FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
+
+        FMC_ErasePage(ADDRESS_APP_FLAG);
+        FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
+
+        // 设置首次刷入的flag
+        FMCStatus = FMC_ProgramWord(ADDRESS_APP_FLAG,APP_FLAG_READY_TO_WRITE);
+
+        FMC_ClearBitState(FMC_FLAG_EOP | FMC_FLAG_WERR | FMC_FLAG_PERR );
+
+        FMC_Lock();
+    }
+
+
+
     FMC_Lock();
 
 
@@ -88,19 +151,27 @@ void writeParamToData() {
 uint8_t checkAppStatus(void) {
 
     uint32_t sum_c = 0x0,address = AppAddress;
-	
-	
-	
-	return 0 ;
+
+
     // 首先从 flash 中读取 数据
+
+
+    ptrd = (uint32_t*)(ADDRESS_APP_FLAG);
+    app_flag = *ptrd ;
+
+
+    if (app_flag == APP_FLAG_FIRST) {
+        return 0 ;
+    }
+
     readParamFromData() ;
-	
+
     // 如果 实际写入长度 和 期待写入长度 不同的话.不用继续了
     if(write_app_len != write_now_app_len || write_app_len == 0xFFFFFFFF || write_now_app_len == 0xFFFFFFFF) {
 
         return 1 ;
     }
-		
+
     // 循环取值,然后累加
     for (address = AppAddress; address < (AppAddress + write_app_len) ; address+=4 ) {
         ptrd = (uint32_t*)(address);
@@ -113,14 +184,14 @@ uint8_t checkAppStatus(void) {
 
         return 2;
     }
-		
 
-		// 如果 App 的首位地址没有问题的话
-		if (((*(__IO uint32_t*)AppAddress) & 0x20000000 ) != 0x20000000) {
+
+    // 如果 App 的首位地址没有问题的话
+    if (((*(__IO uint32_t*)AppAddress) & 0x20000000 ) != 0x20000000) {
 
         return 3 ;
     }
-		
+
     return 0 ;
 }
 
@@ -133,31 +204,32 @@ uint32_t JumpAddress;
 
 void startApplication(void)
 {
+
     if (((*(__IO uint32_t*)AppAddress) & 0x20000000 ) == 0x20000000) {
         JumpAddress = *(__IO uint32_t*) (AppAddress + 4);
         startApp = (pFonction) JumpAddress;
         __set_MSP(*(__IO uint32_t*) AppAddress);
         __enable_irq();     //PRIMASK=1,关全局中断
-			
-			
-				//USART1_Sendstr(" -- jump success \r\n");
-			
+
+
+        //USART1_Sendstr(" -- jump success \r\n");
+
         startApp();
     }
-		else {
-			USART1_Sendstr(" -- jump failed \r\n");
-			
-		}
+    else {
+        ///USART1_Sendstr(" -- jump failed \r\n");
+
+    }
 }
 
 /*
 		向Flash 中写入数据
 		@param offset 相对于 AppAddress 的偏移,即指定将数据写入的位置
-		@param datas  需要写入到 Flash 中的数据 
+		@param datas  需要写入到 Flash 中的数据
 		@param len    需要写入到Flash 中的数据的长度
 		@return 	0: 	写入成功
 		@return 	1: 	写入失败
-		
+
  */
 uint8_t writeData(uint32_t offset,uint32_t datas[],uint8_t len) {
     uint32_t temp0 = 0x0,temp1 = 0x0 ;
@@ -192,15 +264,15 @@ uint8_t writeData(uint32_t offset,uint32_t datas[],uint8_t len) {
         }
         ptrd++;
     }
-		
-		//将当前写的进度更新
-		readParamFromData();
-		
-		write_now_app_len = ( offset + len * 4 );
-		
-		writeParamToData();
-		
-		
+
+    //将当前写的进度更新
+    readParamFromData();
+
+    write_now_app_len = ( offset + len * 4 );
+
+    writeParamToData();
+
+
     return writecount ;
 
 

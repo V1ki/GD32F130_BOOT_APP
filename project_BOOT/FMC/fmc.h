@@ -10,18 +10,28 @@
 #define AppAddress 0x08006400      // APP Address
 #define AppDataArea   0x08009C00			// App Data Area
 
+
 #define ADDRESS_WRITE_NOW_APP_LEN 0x08009C00 // APP 写入进度 数据的保存地址
 #define ADDRESS_WRITE_EXCEPTED_APP_LEN  0x08009C04 // APP 程序总长度 的数据保存地址
 #define ADDRESS_WRITE_APP_CHECK_SUM 0x08009C08 // APP 程序的checksum 的数据保存地址
 #define ADDRESS_APP_VERSION 0x08009C0C  // App 程序的版本
 
-extern uint32_t write_now_app_len, write_app_len, write_app_checksum,app_version ;
+#define ADDRESS_APP_FLAG 0x08005600 //app flag 如果有的话,表示 APP 是首次刷入
+
+#define APP_FLAG_FIRST ((uint32_t)0x19861101) //首次刷入的flag
+#define APP_FLAG_READY_TO_WRITE ((uint32_t)0x20170103) // 升级后的flag
+
+
+
+extern uint32_t write_now_app_len, write_app_len, write_app_checksum,app_version ,app_flag ;
 /* 清除App 区域的Flash 中的数据 */
 void clearAppArea(void);
 
 void readParamFromData(void) ;
 
 void writeParamToData(void) ;
+
+void setAppFlag() ;
 
 /*
    启动App

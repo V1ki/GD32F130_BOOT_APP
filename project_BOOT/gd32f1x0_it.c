@@ -21,54 +21,6 @@ extern bool maskshake;
 uint32_t Time_Delay;
 extern void delay_ms(uint16_t ms);
 
-#define POWERKEYINT 1
-#define ACCINT			2
-
-void Close_Interrupt(int interruptnum)
-{
-  NVIC_InitPara NVIC_InitStructure;
-	
-	if(interruptnum==ACCINT)
-	{
-		NVIC_PRIGroup_Enable(NVIC_PRIGROUP_1);
-		NVIC_InitStructure.NVIC_IRQ = EXTI2_3_IRQn;
-		NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-		NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-		NVIC_InitStructure.NVIC_IRQEnable = DISABLE;
-		NVIC_Init(&NVIC_InitStructure);
-	}else if(interruptnum==POWERKEYINT)
-	{
-		NVIC_PRIGroup_Enable(NVIC_PRIGROUP_1);
-		NVIC_InitStructure.NVIC_IRQ = EXTI4_15_IRQn;
-		NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-		NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-		NVIC_InitStructure.NVIC_IRQEnable = DISABLE;
-		NVIC_Init(&NVIC_InitStructure);
-	}
-}
-
-void Open_Interrupt(int interruptnum)
-{
-  NVIC_InitPara NVIC_InitStructure;
-	
-	if(interruptnum==ACCINT)
-	{
-		NVIC_PRIGroup_Enable(NVIC_PRIGROUP_1);
-		NVIC_InitStructure.NVIC_IRQ = EXTI2_3_IRQn;
-		NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-		NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-		NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-		NVIC_Init(&NVIC_InitStructure);
-	}else if(interruptnum==POWERKEYINT)
-	{
-		NVIC_PRIGroup_Enable(NVIC_PRIGROUP_1);
-		NVIC_InitStructure.NVIC_IRQ = EXTI4_15_IRQn;
-		NVIC_InitStructure.NVIC_IRQPreemptPriority = 0;
-		NVIC_InitStructure.NVIC_IRQSubPriority = 0;
-		NVIC_InitStructure.NVIC_IRQEnable = ENABLE;
-		NVIC_Init(&NVIC_InitStructure);
-	}
-}
 
 /* Private functions ---------------------------------------------------------*/
 /**
@@ -178,19 +130,14 @@ void SysTick_Handler(void)
   */
 void EXTI2_3_IRQHandler(void)
 {
-	/* Reload IWDG counter */
-	//IWDG_ReloadCounter(); 
-	#if 0
-  Close_Interrupt(ACCINT);
-	
+		/* Reload IWDG counter */
+	IWDG_ReloadCounter(); 
 	if(EXTI_GetIntBitState(EXTI_LINE3) != RESET)
   {
     /* Clear EXTI line13 bit */
     EXTI_ClearIntBitState(EXTI_LINE3);
 		b_onoffflag=1;
   }
-	Open_Interrupt(ACCINT);
-	#endif
 } 
 
 /**
@@ -200,11 +147,9 @@ void EXTI2_3_IRQHandler(void)
   */
 void EXTI4_15_IRQHandler(void)
 {
-	/* Reload IWDG counter */
-	//IWDG_ReloadCounter(); 
-	#if 0
-  Close_Interrupt(POWERKEYINT);
-	
+
+		/* Reload IWDG counter */
+	IWDG_ReloadCounter(); 
 	
 	if(EXTI_GetIntBitState(EXTI_LINE7) != RESET)
   {
@@ -224,7 +169,5 @@ void EXTI4_15_IRQHandler(void)
 		}					
   }
 	IWDG_ReloadCounter(); 
-	Open_Interrupt(POWERKEYINT);
-	#endif
 } 
 /******************* (C) COPYRIGHT 2016 GIGADEVICE *****END OF FILE****/

@@ -336,6 +336,9 @@ void Delayus_Configuration(void)
   */
 int main(void)
 {
+	
+	int vbattmp=0,isenstmp=0;
+	
     /*Config System clocks --------------------------------------------------*/
     RCC_Configuration();
 
@@ -356,7 +359,7 @@ int main(void)
 
 
     /* Set counter reload value to 3120 */
-    IWDG_SetReloadValue(1560);  //156=1S //3120
+    IWDG_SetReloadValue(3900);  //156=1S //3120
 
     /* Reload IWDG counter */
     IWDG_ReloadCounter();
@@ -372,7 +375,7 @@ int main(void)
 
 
     // 电源 置 为高位
-    GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
+		GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
     GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
 
     USART_Configure();
@@ -388,14 +391,90 @@ int main(void)
     //USART1_Sendstr(" -- current is boot project \r\n");
 
     //delay_ms(500);
+		
+		setAppFlag();
+		
 
     clearData();
     data[0] = 0 ;
     usart_send_ack(RESP_GOTO_BOOT,data,1);
 
-
+		b_onoffflag=1;
     while (1)
     {
+			
+			GPIO_SetBits(PORT_OPVEN,GPIO_OPVEN);
+		/* Start ADC1 Software Conversion */ 
+		ADC_RegularChannel_Config(CHANN_VBATADC, 1, ADC_SAMPLETIME_13POINT5);
+		ADC_SoftwareStartConv_Enable(ENABLE);
+		delay_ms(2);
+		vbattmp=ADC_GetConversionValue();
+		vbatuse=(vbatuse+vbattmp)/2;
+						
+		ADC_RegularChannel_Config(CHANN_ISENSADC, 1, ADC_SAMPLETIME_13POINT5);
+		ADC_SoftwareStartConv_Enable(ENABLE);
+		delay_ms(2);
+		isenstmp=ADC_GetConversionValue();
+		isensuse=(isensuse+isenstmp)/2;
+		GPIO_ResetBits(PORT_OPVEN,GPIO_OPVEN);
+			
+		if(vbatuse<VBAT_STDBY)
+		{
+			if(vbat_stdbyflag>VBAT_STDBYTIMEOUT)
+			{
+				GPIO_ResetBits(PORT_PW5VEN,GPIO_PW5VEN);
+				GPIO_ResetBits(PORT_PW4VEN,GPIO_PW4VEN);
+				b_onoffflag=0;
+				vbat_stdbyflag=0;
+			}else
+			{
+				vbat_stdbyflag++;
+			}
+			b_isenscontflag=0;       		//add 20161229
+		}
+		else if(vbatuse<VBAT_ALERT)
+		{
+			if(!(GPIO_ReadInputBit(PORT_ACCDET,GPIO_ACCDET)))  	//ACC is high normal,connect 12v is low
+			{
+				if(b_onoffflag>0)
+				{
+					GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
+					GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
+				}
+				b_isenscontflag=0;      	//add 20161229
+			}
+			else if(isensuse>ICURRENT_STB)
+			{
+				if(b_isenscontflag<ISENSCONTFLAGINIT)
+				{
+					b_isenscontflag++;
+				}
+				else
+				{
+					GPIO_ResetBits(PORT_PW5VEN,GPIO_PW5VEN);
+					GPIO_ResetBits(PORT_PW4VEN,GPIO_PW4VEN);
+					b_onoffflag=0;
+					b_isenscontflag=0;
+				}
+			}else
+			{
+				b_isenscontflag=0;
+			}
+			vbat_stdbyflag=0;
+		}
+		else
+		{
+			if(b_onoffflag>0)
+			{
+				GPIO_SetBits(PORT_PW5VEN,GPIO_PW5VEN);
+				GPIO_SetBits(PORT_PW4VEN,GPIO_PW4VEN);
+			}
+			b_isenscontflag=0;
+			vbat_stdbyflag=0;
+		}
+			
+			
+			
         IWDG_ReloadCounter();
         delay_ms(1000);
 
@@ -490,6 +569,7 @@ int main(void)
                     write_app_len = (u_rx.data[3] << 24) + (u_rx.data[2] << 16) + (u_rx.data[1] << 8) + u_rx.data[0] ;
                     write_app_checksum = (u_rx.data[7] << 24) + (u_rx.data[6] << 16) + (u_rx.data[5] << 8) + u_rx.data[4] ;
                     app_version = (u_rx.data[11] << 24) + (u_rx.data[10] << 16) + (u_rx.data[9] << 8) + u_rx.data[8] ;
+									app_flag = APP_FLAG_READY_TO_WRITE ;
 
                     writeParamToData();
 

@@ -365,7 +365,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER,GD32F130_150</Define>
               <Undefine></Undefine>
-              <IncludePath>..\;..\..\Firmware\Peripherals\inc;..\..\Firmware\CMSIS;..\..\Utilities;..\UART;..\FMC</IncludePath>
+              <IncludePath>..\;..\..\Firmware\Peripherals\inc;..\..\Firmware\CMSIS;..\..\Utilities;..\UART;..\FMC;..\CONF</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -582,6 +582,16 @@
               <FileName>fmc.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\FMC\fmc.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>CONF</GroupName>
+          <Files>
+            <File>
+              <FileName>conf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\CONF\conf.c</FilePath>
             </File>
           </Files>
         </Group>

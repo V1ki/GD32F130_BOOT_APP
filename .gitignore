@@ -1,0 +1,6 @@
+*.o
+*.orig
+project_BOOT/MDK-ARM/output
+project_BOOT/MDK-ARM/list
+project_APP/MDK-ARM/output
+project_APP/MDK-ARM/list
